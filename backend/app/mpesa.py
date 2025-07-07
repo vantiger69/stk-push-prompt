@@ -1,5 +1,5 @@
-def handle_mpesa_callback(data):
+#def handle_mpesa_callback(data):
 
 
-    print("Handling callback in mpesa.py")
-    print(data)
+ #   print("Handling callback in mpesa.py")
+  #  print(data)
