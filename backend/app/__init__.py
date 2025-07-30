@@ -2,12 +2,10 @@ from flask import Flask
 from flask_cors import CORS
 from .routes import mpesa_routes
 from flask_migrate import Migrate
-from flask_sqlalchemy import SQLAlchemy
 import os 
 from dotenv import load_dotenv
+from .models import db
 
-
-db = SQLAlchemy()
 load_dotenv()
 
 def create_app():
