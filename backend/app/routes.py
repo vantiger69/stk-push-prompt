@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from .mpesa import stk_push
-from .models import db, STKPushRequest, STKPushResponse
+from .models import db, STKPushRequest, STKPushResponse, Transaction
 import os
 import requests
 
@@ -83,10 +83,79 @@ def initiate_stk_push():
     db.session.commit()
     return jsonify({"message":"successful"})
 
-    #if status_code != 200:
-     #   print("STK response failed")
-      #  return jsonify({"error": "STK response failed"}), 400
+
+@mpesa_routes.route('/stk_callback', methods=['POST'])
+def stk_callback():
+    data = request.get_json()
+    callback = data['Body']['stkCallback']
+
+    #Extract data
+    merchant_id = callback['MerchantRequestID']
+    checkout_id = callback['CheckoutRequestID']
+    result_code =callback['ResultCode']
+    result_desc = callback['ResultDesc']
+
     
-    #else:
-     #   print("STK response successfully saved")
-      #  return jsonify({"message": "STK response successfully saved"}), 200
+    if result_code == 0:
+        metadata = callback['CallbackMetadata']['Item']
+
+        #extract metadata
+        receipt = next((item['Value'] for item in metadata if item['Name'] == 'MpesaReceiptNumber'), None)
+        amount = next((item['Value'] for item in metadata if item['Name'] == 'Amount'), 0)
+        phone = next((item['Value'] for item in metadata if item['Name'] == 'PhoneNumber'), None)
+        date = next((item['Value'] for item in metadata if item['Name'] == 'TransactionDate'), None)
+    
+    #find the response in the STKPushResponse
+    response = STKPushResponse.query.filter_by(
+        merchant_request_id=merchant_id,
+        checkout_request_id=checkout_id
+
+    ).first()
+
+    if response:
+        transaction = Transaction(
+            merchant_request_id=merchant_id,
+            checkout_request_id=checkout_id,
+            result_code=str(result_code),
+            result_desc=result_desc,
+            mpesa_receipt_number=receipt,
+            amount=amount,
+            phone_number=phone,
+            transaction_date=str(date),
+            response=response
+        )
+        db.session.add(transaction)
+        db.session.commit()
+        return jsonify({"message": "Transaction saved successfully"})
+
+
+    else:
+
+      return jsonify({"error": "No matching STKPushResponse found"})
+
+
+@mpesa_routes.route('/display_transaction/<phone_number>', methods=['GET'])
+def display_transaction(phone_number):
+    try:
+        transaction = Transaction.query.filter_by(phone_number=phone_number).all()
+
+        if not transaction:
+            return jsonify({"error":"No transaction found for this phone number"}),404
+        
+        result = []
+        for t in transaction:
+            result.append({
+                "transaction_id":t.id,
+                "merchant_request_id":t.merchant_request_id,
+                "checkout_request_id":t.checkout_request_id,
+                "result_code":t.result_code,
+                "result_desc":t.result_desc,
+                "mpesa_receipt_number":t.mpesa_receipt_number,
+                "amount":t.amount,
+                "phone_number":t.phone_number,
+                "transaction_date":t.transaction_date,
+                "created_at":t.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            })
+            return jsonify(result),200
+    except Exception as e:
+        return jsonify({"error":f"Ab error occured: {str(e)}"}),500
